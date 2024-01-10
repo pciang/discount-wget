@@ -1,0 +1,99 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "Compile the project's main.cpp",
+            "command": "/usr/local/bin/g++-13",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "${workspaceFolder}/src/main.cpp",
+                "-o",
+                "${workspaceFolder}/build/main",
+                // includes
+                "-I",
+                "${workspaceFolder}/llhttp/build",
+                "-I",
+                "/usr/local/include",
+                "-I",
+                "/usr/local/opt/curl/include",
+                // lib dirs
+                "-L",
+                "${workspaceFolder}/llhttp/build",
+                "-L",
+                "/usr/local/lib",
+                "-L",
+                "/usr/local/opt/curl/lib",
+                // libs
+                "-l",
+                "llhttp",
+                "-l",
+                "ssl",
+                "-l",
+                "crypto",
+                "-l",
+                "uv",
+                "-l",
+                "curl"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "cppbuild",
+            "label": "Compile a file with main()",
+            "command": "/usr/local/bin/g++-13",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "${workspaceFolder}/src/${fileBasenameNoExtension}.cpp",
+                "-o",
+                "${workspaceFolder}/build/${fileBasenameNoExtension}",
+                // includes
+                "-I",
+                "${workspaceFolder}/llhttp/build",
+                "-I",
+                "/usr/local/include",
+                "-I",
+                "/usr/local/opt/curl/include",
+                // lib dirs
+                "-L",
+                "${workspaceFolder}/llhttp/build",
+                "-L",
+                "/usr/local/lib",
+                "-L",
+                "/usr/local/opt/curl/lib",
+                // libs
+                "-l",
+                "llhttp",
+                "-l",
+                "ssl",
+                "-l",
+                "crypto",
+                "-l",
+                "uv",
+                "-l",
+                "curl"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ],
+    "version": "2.0.0"
+}

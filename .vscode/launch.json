@@ -1,0 +1,34 @@
+{
+    "configurations": [
+        {
+            "name": "Compile and run discount-wget",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/main",
+            "args": [
+                "-o",
+                "./libuv-test.zip",
+                "https://codeload.github.com/libuv/libuv/zip/refs/tags/v1.47.0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Compile the project's main.cpp"
+        },
+        {
+            "name": "Run any .cpp file other than main.cpp",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/${fileBasenameNoExtension}",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Compile a file with main()"
+        }
+    ],
+    "version": "2.0.0"
+}
