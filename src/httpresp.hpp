@@ -8,7 +8,7 @@ project::composite_parser_t *get_composite(llhttp_t *parser)
     return reinterpret_cast<project::composite_parser_t *>(parser);
 }
 
-project::prog_t *get_prog(llhttp_t *parser)
+const project::prog_t *get_prog(llhttp_t *parser)
 {
     return get_composite(parser)->prog;
 }

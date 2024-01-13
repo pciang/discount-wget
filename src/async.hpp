@@ -6,19 +6,20 @@
 
 #include "common.hpp"
 
-project::tls_state_t initiate_tls_handshake(project::prog_t &);
+project::tls_state_t initiate_tls_handshake(const project::prog_t &);
 
-project::prog_t *get_prog(uv_loop_t *loop)
+const project::prog_t *get_prog(uv_loop_t *loop)
 {
     return reinterpret_cast<project::prog_t *>(loop->data);
 }
 
-int prepare_uvbuf(const char *base, size_t len, uv_buf_t **p_uvbuf)
+int prepare_uvbuf(const char *base, size_t len, std::unique_ptr<uv_buf_t> &uvbuf)
 {
-    uv_buf_t *uvbuf = reinterpret_cast<uv_buf_t *>(malloc(sizeof(uv_buf_t)));
+    std::unique_ptr<uv_buf_t> temp(reinterpret_cast<uv_buf_t *>(malloc(sizeof(uv_buf_t))));
+    uvbuf.swap(temp);
     uvbuf->base = reinterpret_cast<char *>(malloc(uvbuf->len = len));
+
     memcpy(uvbuf->base, base, len);
-    *p_uvbuf = uvbuf;
     return 0;
 }
 
@@ -81,10 +82,10 @@ void on_fs_open(uv_fs_t *fsreq)
     }
     else
     {
-        project::prog_t *prog = get_prog(fsreq->loop);
+        const project::prog_t *prog = get_prog(fsreq->loop);
 
-        prog->outfiled = fsreq->result;
-        prog->outfiled_offset = 0;
+        const_cast<project::prog_t *>(prog)->outfiled = fsreq->result;
+        const_cast<project::prog_t *>(prog)->outfiled_offset = 0;
     }
 
     free(fsreq);
@@ -92,40 +93,39 @@ void on_fs_open(uv_fs_t *fsreq)
 
 void on_getaddrinfo(uv_getaddrinfo_t *uvreq, int status, struct addrinfo *result)
 {
-    project::prog_t *prog = get_prog(uvreq->loop);
+    const project::prog_t *prog = get_prog(uvreq->loop);
 
     if (0 != status)
         fprintf(stderr, "error couldn't resolve %s with message: %s\n", prog->hostname, uv_err_name(status));
     else
-        get_prog(uvreq->loop)->resolved = result;
+        const_cast<project::prog_t *>(get_prog(uvreq->loop))->resolved = result;
 
     free(uvreq);
 }
 
 void on_data_read(uv_stream_t *, ssize_t, const uv_buf_t *);
 
-int prepare_reqbuf(const char *hostname, const char *path, uv_buf_t **p_reqbuf)
+int prepare_reqbuf(const char *hostname, const char *path, std::unique_ptr<uv_buf_t> &reqbuf)
 {
     std::string httpreq = project::prepare_httpreq(hostname, path);
-    return prepare_uvbuf(httpreq.c_str(), httpreq.length(), p_reqbuf);
+    return prepare_uvbuf(httpreq.c_str(), httpreq.length(), reqbuf);
 }
 
-void on_tcp_connect(uv_connect_t *connreq, int status)
+void on_tcp_connect(uv_connect_t *connreq_raw, int status)
 {
+    std::unique_ptr<uv_connect_t> connreq(connreq_raw);
     if (0 != status)
     {
         fprintf(stderr, "error couldn't connect: %s\n", uv_err_name(status));
-
-        free(connreq);
         return;
     }
 
     uv_stream_t *client = connreq->handle;
     uv_read_start(client, uv_quick_alloc, on_data_read);
 
-    project::prog_t *prog = get_prog(client->loop);
+    const project::prog_t *prog = get_prog(client->loop);
 
-    switch (initiate_tls_handshake(*get_prog(client->loop)))
+    switch (initiate_tls_handshake(const_cast<project::prog_t &>(*prog)))
     {
     case project::tls_state_t::WANT_READ: // means OK!
         break;
@@ -135,17 +135,15 @@ void on_tcp_connect(uv_connect_t *connreq, int status)
         break;
     case project::tls_state_t::NOT_HTTPS:
     {
-        uv_buf_t *reqbuf;
-        prepare_reqbuf(prog->hostname, prog->path, &reqbuf);
-        if (int retval = uv_quick_write(client, reqbuf); 0 != retval)
-        {
+        std::unique_ptr<uv_buf_t> reqbuf;
+        prepare_reqbuf(prog->hostname, prog->path, reqbuf);
+        if (int retval = uv_quick_write(client, reqbuf.get()); 0 != retval)
             uv_close(reinterpret_cast<uv_handle_t *>(client), on_stream_close);
-            project::uv_free(reqbuf);
-        }
+        else
+            reqbuf.release();
         break;
     }
     }
-    free(connreq);
 }
 
 void cleanup_fs_write(uv_fs_t *fwritereq)
@@ -173,7 +171,7 @@ void on_writeto(uv_fs_t *fwritereq)
     {
         fprintf(stderr, "error couldn't write to file %lld: %s\n", fwritereq->file, uv_err_name(fwritereq->result));
 
-        project::prog_t *prog = get_prog(fwritereq->loop);
+        const project::prog_t *prog = get_prog(fwritereq->loop);
         uv_close(reinterpret_cast<uv_handle_t *>(prog->client), on_stream_close);
         uv_fclose(prog->loop, fwritereq->file);
     }

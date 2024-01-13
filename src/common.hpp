@@ -98,4 +98,11 @@ namespace project
     int init_prog(prog_tpp &);
 };
 
+template <>
+void std::default_delete<uv_buf_t>::operator()(uv_buf_t *uvbuf) const
+{
+    free(uvbuf->base);
+    free(uvbuf);
+}
+
 #endif

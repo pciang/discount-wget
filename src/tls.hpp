@@ -14,7 +14,7 @@ namespace project
     };
 };
 
-project::flush_wbio_t flush_wbio(SSL *ssl, uv_buf_t **p_uvbuf)
+project::flush_wbio_t flush_wbio(SSL *ssl, std::unique_ptr<uv_buf_t> &uvbuf)
 {
     BIO *wbio = SSL_get_wbio(ssl);
 
@@ -22,11 +22,11 @@ project::flush_wbio_t flush_wbio(SSL *ssl, uv_buf_t **p_uvbuf)
     if (0 >= npending)
         return project::flush_wbio_t::EMPTY;
 
-    uv_buf_t *uvbuf = reinterpret_cast<uv_buf_t *>(malloc(sizeof(uv_buf_t)));
+    std::unique_ptr<uv_buf_t> temp(reinterpret_cast<uv_buf_t *>(malloc(sizeof(uv_buf_t))));
+    uvbuf.swap(temp);
     uvbuf->base = reinterpret_cast<char *>(malloc(uvbuf->len = npending));
-    BIO_read(wbio, reinterpret_cast<void *>(uvbuf->base), npending);
 
-    *p_uvbuf = uvbuf;
+    BIO_read(wbio, reinterpret_cast<void *>(uvbuf->base), npending);
     return project::flush_wbio_t::OK;
 }
 
@@ -41,7 +41,7 @@ int ssl_quick_peek(SSL *ssl)
     return SSL_peek(ssl, placeholder, sizeof(placeholder));
 }
 
-project::flush_wbio_t ssl_quick_read(SSL *ssl, uv_buf_t **p_uvbuf)
+project::flush_wbio_t ssl_quick_read(SSL *ssl, std::unique_ptr<uv_buf_t> &uvbuf)
 {
     ssl_quick_peek(ssl);
 
@@ -49,11 +49,11 @@ project::flush_wbio_t ssl_quick_read(SSL *ssl, uv_buf_t **p_uvbuf)
     if (0 >= npending)
         return project::flush_wbio_t::EMPTY;
 
-    uv_buf_t *uvbuf = reinterpret_cast<uv_buf_t *>(malloc(sizeof(uv_buf_t)));
+    std::unique_ptr<uv_buf_t> temp(reinterpret_cast<uv_buf_t *>(malloc(sizeof(uv_buf_t))));
+    uvbuf.swap(temp);
     uvbuf->base = reinterpret_cast<char *>(malloc(uvbuf->len = npending));
-    SSL_read(ssl, uvbuf->base, npending);
 
-    *p_uvbuf = uvbuf;
+    SSL_read(ssl, uvbuf->base, npending);
     return project::flush_wbio_t::OK;
 }
 
