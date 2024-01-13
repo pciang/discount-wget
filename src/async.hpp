@@ -92,8 +92,10 @@ void on_fs_open(uv_fs_t *fsreq)
 
 void on_getaddrinfo(uv_getaddrinfo_t *uvreq, int status, struct addrinfo *result)
 {
+    project::prog_t *prog = get_prog(uvreq->loop);
+
     if (0 != status)
-        fprintf(stderr, "error couldn't resolve %s with message: %s\n", project::prog.hostname, uv_err_name(status));
+        fprintf(stderr, "error couldn't resolve %s with message: %s\n", prog->hostname, uv_err_name(status));
     else
         get_prog(uvreq->loop)->resolved = result;
 
@@ -102,9 +104,9 @@ void on_getaddrinfo(uv_getaddrinfo_t *uvreq, int status, struct addrinfo *result
 
 void on_data_read(uv_stream_t *, ssize_t, const uv_buf_t *);
 
-int prepare_reqbuf(uv_buf_t **p_reqbuf)
+int prepare_reqbuf(const char *hostname, const char *path, uv_buf_t **p_reqbuf)
 {
-    std::string httpreq = project::prepare_httpreq();
+    std::string httpreq = project::prepare_httpreq(hostname, path);
     return prepare_uvbuf(httpreq.c_str(), httpreq.length(), p_reqbuf);
 }
 
@@ -121,6 +123,8 @@ void on_tcp_connect(uv_connect_t *connreq, int status)
     uv_stream_t *client = connreq->handle;
     uv_read_start(client, uv_quick_alloc, on_data_read);
 
+    project::prog_t *prog = get_prog(client->loop);
+
     switch (initiate_tls_handshake(*get_prog(client->loop)))
     {
     case project::tls_state_t::WANT_READ: // means OK!
@@ -132,7 +136,7 @@ void on_tcp_connect(uv_connect_t *connreq, int status)
     case project::tls_state_t::NOT_HTTPS:
     {
         uv_buf_t *reqbuf;
-        prepare_reqbuf(&reqbuf);
+        prepare_reqbuf(prog->hostname, prog->path, &reqbuf);
         if (int retval = uv_quick_write(client, reqbuf); 0 != retval)
         {
             uv_close(reinterpret_cast<uv_handle_t *>(client), on_stream_close);

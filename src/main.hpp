@@ -42,15 +42,12 @@ namespace project
         return 0;
     }
 
-    int parse_url()
+    int parse_url(prog_t &prog)
     {
         prog.curlh = curl_url();
 
         if (CURLUcode retval = curl_url_set(prog.curlh, CURLUPART_URL, opts.url.c_str(), CURLU_GUESS_SCHEME); CURLUE_OK != retval)
-        {
-            fprintf(stderr, "error malformed URL\n");
             return -1;
-        }
 
         curl_url_get(prog.curlh, CURLUPART_SCHEME, &prog.scheme, 0);
         curl_url_get(prog.curlh, CURLUPART_HOST, &prog.hostname, 0);
@@ -60,20 +57,26 @@ namespace project
         return 0;
     }
 
-    int init_prog()
+    int init_prog(prog_tpp &prog)
     {
-        if (int retval = parse_url(); 0 != retval)
+        prog_tpp temp(new (reinterpret_cast<prog_t *>(malloc(sizeof(prog_t)))) prog_t);
+        prog.swap(temp);
+
+        if (int retval = parse_url(*prog); 0 != retval)
+        {
+            fprintf(stderr, "error couldn't parse URL\n");
+            return retval;
+        }
+
+        prog->usehttps = false;
+        if (int retval = std::string("https").compare(prog->scheme); 0 == retval)
+            prog->usehttps = true;
+
+        if (int retval = init_httpresp_parser(*prog); 0 != retval)
             return retval;
 
-        prog.usehttps = false;
-        if (int retval = std::string("https").compare(prog.scheme); 0 == retval)
-            prog.usehttps = true;
-
-        if (int retval = init_httpresp_parser(prog); 0 != retval)
-            return retval;
-
-        prog.loop = uv_default_loop();
-        uv_loop_set_data(prog.loop, &prog);
+        prog->loop = uv_default_loop();
+        uv_loop_set_data(prog->loop, prog.get());
 
         // init openssl
         SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_client_method());
@@ -83,9 +86,10 @@ namespace project
         SSL *ssl = SSL_new(ssl_ctx);
         SSL_set_connect_state(ssl); // I am a client
         SSL_set_bio(ssl, BIO_new(BIO_s_mem()), BIO_new(BIO_s_mem()));
-        SSL_set1_host(ssl, prog.hostname);
+        SSL_set1_host(ssl, prog->hostname);
 
-        prog.tls = ssl;
+        prog->tls = ssl;
+
         return 0;
     }
 };
@@ -95,14 +99,14 @@ int run_phase_one(project::prog_t &prog)
     prog.outfiled = 0;
     prog.resolved = NULL;
 
-    uv_fs_t *fsreq = reinterpret_cast<uv_fs_t *>(malloc(sizeof(uv_fs_t)));
-    if (int retval = uv_fs_open(prog.loop, fsreq, project::opts.outfilename.c_str(), UV_FS_O_CREAT | UV_FS_O_RDWR, S_IRWXU | S_IRGRP | S_IROTH, on_fs_open))
+    std::unique_ptr<uv_fs_t> fsreq(reinterpret_cast<uv_fs_t *>(malloc(sizeof(uv_fs_t))));
+    if (int retval = uv_fs_open(prog.loop, fsreq.get(), project::opts.outfilename.c_str(), UV_FS_O_CREAT | UV_FS_O_RDWR, S_IRWXU | S_IRGRP | S_IROTH, on_fs_open))
     {
         fprintf(stderr, "error attempting to write into the file %s with message: %s\n", project::opts.outfilename.c_str(), uv_err_name(retval));
-
-        free(fsreq);
         return retval;
     }
+    else
+        fsreq.release();
 
     addrinfo hint;
     memset(&hint, 0, sizeof(addrinfo));
@@ -110,15 +114,14 @@ int run_phase_one(project::prog_t &prog)
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_protocol = IPPROTO_TCP;
 
-    uv_getaddrinfo_t *getaddreq = reinterpret_cast<uv_getaddrinfo_t *>(malloc(sizeof(uv_getaddrinfo_t)));
-    if (int retval = uv_getaddrinfo(prog.loop, getaddreq, on_getaddrinfo, prog.hostname, prog.port, &hint))
+    std::unique_ptr<uv_getaddrinfo_t> getaddreq(reinterpret_cast<uv_getaddrinfo_t *>(malloc(sizeof(uv_getaddrinfo_t))));
+    if (int retval = uv_getaddrinfo(prog.loop, getaddreq.get(), on_getaddrinfo, prog.hostname, prog.port, &hint))
     {
         fprintf(stderr, "error attempting to resolve %s with message: %s\n", prog.hostname, uv_err_name(retval));
-
-        free(fsreq);
-        free(getaddreq);
         return retval;
     }
+    else
+        getaddreq.release();
 
     return uv_run(prog.loop, UV_RUN_DEFAULT);
 }
@@ -203,7 +206,9 @@ int try_send_httpreq(SSL *tls, uv_stream_t *stream)
     if (!SSL_is_init_finished(tls))
         return -1;
 
-    std::string httpreq = project::prepare_httpreq();
+    project::prog_t *prog = get_prog(stream->loop);
+
+    std::string httpreq = project::prepare_httpreq(prog->hostname, prog->path);
     SSL_write(tls, httpreq.c_str(), httpreq.length());
 
     uv_buf_t *writebuf;

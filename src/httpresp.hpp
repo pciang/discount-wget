@@ -1,8 +1,6 @@
 #ifndef DISCOUNT_WGET_HTTPRESP_HPP
 #define DISCOUNT_WGET_HTTPRESP_HPP
 
-#include <iostream>
-
 #include "common.hpp"
 
 project::composite_parser_t *get_composite(llhttp_t *parser)
@@ -33,7 +31,6 @@ int on_header_value_complete(llhttp_t *parser)
 {
     project::composite_parser_t *composite = get_composite(parser);
     composite->pheader->second = std::move(composite->partial);
-    std::cerr << composite->pheader->first << ": " << composite->pheader->second << std::endl;
     return 0;
 }
 

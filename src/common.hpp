@@ -3,6 +3,7 @@
 
 #include <map>
 #include <string>
+#include <memory>
 
 #include "uv.h"
 #include "llhttp.h"
@@ -66,7 +67,9 @@ namespace project
         ssize_t outfiled;
         int64_t outfiled_offset;
         bool usehttps;
-    } prog;
+    };
+
+    typedef std::unique_ptr<prog_t> prog_tpp;
 
     enum class tls_state_t : int
     {
@@ -78,12 +81,12 @@ namespace project
         ERROR
     };
 
-    std::string prepare_httpreq()
+    std::string prepare_httpreq(const char *hostname, const char *path)
     {
         std::string getreq = TEMPLATE_GET;
 
-        return std::move(getreq.replace(getreq.find("{host}"), 6, prog.hostname)
-                             .replace(getreq.find("{path}"), 6, prog.path));
+        return std::move(getreq.replace(getreq.find("{host}"), 6, hostname)
+                             .replace(getreq.find("{path}"), 6, path));
     }
 
     void uv_free(uv_buf_t *uvbuf)
@@ -91,6 +94,8 @@ namespace project
         free(uvbuf->base);
         free(uvbuf);
     }
+
+    int init_prog(prog_tpp &);
 };
 
 #endif
