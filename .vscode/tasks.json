@@ -55,6 +55,8 @@
             "command": "/usr/local/bin/g++-13",
             "args": [
                 "-fdiagnostics-color=always",
+                "-Wall",
+                "-O2",
                 "-g",
                 "${workspaceFolder}/src/${fileBasenameNoExtension}.cpp",
                 "-o",
