@@ -105,4 +105,28 @@ void std::default_delete<uv_buf_t>::operator()(uv_buf_t *uvbuf) const
     free(uvbuf);
 }
 
+template <>
+void std::default_delete<uv_fs_t>::operator()(uv_fs_t *fsreq) const
+{
+    free(fsreq);
+}
+
+template <>
+void std::default_delete<uv_tcp_t>::operator()(uv_tcp_t *tcphandle) const
+{
+    free(tcphandle);
+}
+
+template <>
+void std::default_delete<uv_getaddrinfo_t>::operator()(uv_getaddrinfo_t *getaddreq) const
+{
+    free(getaddreq);
+}
+
+template <>
+void std::default_delete<uv_connect_t>::operator()(uv_connect_t *connreq) const
+{
+    free(connreq);
+}
+
 #endif

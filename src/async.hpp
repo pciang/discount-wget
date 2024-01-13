@@ -169,7 +169,7 @@ void on_writeto(uv_fs_t *fwritereq)
 {
     if (0 > fwritereq->result)
     {
-        fprintf(stderr, "error couldn't write to file %lld: %s\n", fwritereq->file, uv_err_name(fwritereq->result));
+        fprintf(stderr, "error couldn't write to file %d: %s\n", fwritereq->file, uv_err_name(fwritereq->result));
 
         const project::prog_t *prog = get_prog(fwritereq->loop);
         uv_close(reinterpret_cast<uv_handle_t *>(prog->client), on_stream_close);
