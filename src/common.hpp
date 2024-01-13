@@ -84,9 +84,9 @@ namespace project
     std::string prepare_httpreq(const char *hostname, const char *path)
     {
         std::string getreq = TEMPLATE_GET;
-        getreq.replace(getreq.find("{host}"), 6, hostname)
-            .replace(getreq.find("{path}"), 6, path);
-        return getreq;
+
+        return std::move(getreq.replace(getreq.find("{host}"), 6, hostname)
+                             .replace(getreq.find("{path}"), 6, path));
     }
 
     void uv_free(uv_buf_t *uvbuf)
