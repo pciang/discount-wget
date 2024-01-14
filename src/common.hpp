@@ -33,7 +33,7 @@ namespace project
     typedef header_t::iterator pheader_t;
 
     struct composite_parser_t;
-    struct prog_t;
+    struct client_t;
 
     struct composite_parser_t
     {
@@ -42,7 +42,7 @@ namespace project
         header_t headers;
         pheader_t pheader;
         std::string partial;
-        prog_t *prog;
+        client_t *client;
     };
 
     struct opts_t
@@ -52,10 +52,10 @@ namespace project
             outfilename;
     } opts;
 
-    struct prog_t
+    struct client_t
     {
         uv_loop_t *loop;
-        std::unique_ptr<uv_tcp_t> client;
+        std::unique_ptr<uv_tcp_t> tcphandle;
         std::unique_ptr<SSL> tls;
         std::unique_ptr<CURLU> curlu;
         std::unique_ptr<char> scheme,
@@ -69,7 +69,14 @@ namespace project
         bool usehttps;
     };
 
-    typedef std::unique_ptr<prog_t> prog_tpp;
+    typedef std::unique_ptr<client_t> client_tpp;
+
+    struct prog_t
+    {
+        uv_loop_t *loop;
+        client_tpp active;
+        llhttp_settings_t settings;
+    };
 
     enum class tls_state_t : int
     {
@@ -104,7 +111,9 @@ namespace project
         return retval;
     }
 
-    int init_prog(prog_tpp &);
+    int init_prog(project::prog_t &);
+
+    int init_client(client_tpp &, llhttp_settings_t &);
 };
 
 template <>

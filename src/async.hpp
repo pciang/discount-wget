@@ -6,11 +6,11 @@
 
 #include "common.hpp"
 
-project::tls_state_t initiate_tls_handshake(const project::prog_t &);
+project::tls_state_t initiate_tls_handshake(const project::client_t &);
 
-const project::prog_t *get_prog(uv_loop_t *loop)
+project::client_t *get_active_client(uv_loop_t *loop)
 {
-    return reinterpret_cast<project::prog_t *>(loop->data);
+    return reinterpret_cast<project::client_t *>(loop->data);
 }
 
 int prepare_uvbuf(const char *base, size_t len, std::unique_ptr<uv_buf_t> &uvbuf)
@@ -43,21 +43,21 @@ void cleanup_quick_write(uv_write_t *writereq)
 
 void on_quick_write(uv_write_t *writereq, int status)
 {
-    uv_stream_t *stream = writereq->handle;
+    uv_stream_t *tcphandle = writereq->handle;
     if (0 != status)
     {
-        fprintf(stderr, "error on quick write %p: %s\n", reinterpret_cast<void *>(stream), uv_err_name(status));
-        uv_close(reinterpret_cast<uv_handle_t *>(stream), on_stream_close);
+        fprintf(stderr, "error on quick write %p: %s\n", reinterpret_cast<void *>(tcphandle), uv_err_name(status));
+        uv_close(reinterpret_cast<uv_handle_t *>(tcphandle), on_stream_close);
     }
 
     cleanup_quick_write(writereq);
 }
 
-int uv_quick_write(uv_stream_t *stream, uv_buf_t *uvbuf)
+int uv_quick_write(uv_stream_t *tcphandle, uv_buf_t *uvbuf)
 {
     uv_write_t *writereq = reinterpret_cast<uv_write_t *>(malloc(sizeof(uv_write_t)));
     writereq->data = reinterpret_cast<void *>(uvbuf);
-    if (int retval = uv_write(writereq, stream, uvbuf, 1, on_quick_write); 0 != retval)
+    if (int retval = uv_write(writereq, tcphandle, uvbuf, 1, on_quick_write); 0 != retval)
     {
         free(writereq);
         return retval;
@@ -79,10 +79,10 @@ void on_fs_open(uv_fs_t *fsreq)
     }
     else
     {
-        const project::prog_t *prog = get_prog(fsreq->loop);
+        project::client_t &client = *get_active_client(fsreq->loop);
 
-        const_cast<project::prog_t *>(prog)->outfiled = fsreq->result;
-        const_cast<project::prog_t *>(prog)->outfiled_offset = 0;
+        client.outfiled = fsreq->result;
+        client.outfiled_offset = 0;
     }
 
     free(fsreq);
@@ -90,14 +90,14 @@ void on_fs_open(uv_fs_t *fsreq)
 
 void on_getaddrinfo(uv_getaddrinfo_t *uvreq, int status, struct addrinfo *result)
 {
-    const project::prog_t &prog = *get_prog(uvreq->loop);
+    project::client_t &client = *get_active_client(uvreq->loop);
 
     if (0 != status)
-        fprintf(stderr, "error couldn't resolve %s with message: %s\n", prog.hostname.get(), uv_err_name(status));
+        fprintf(stderr, "error couldn't resolve %s with message: %s\n", client.hostname.get(), uv_err_name(status));
     else
     {
         std::unique_ptr<addrinfo> _tmp(result);
-        const_cast<project::prog_t &>(prog).resolved.swap(_tmp);
+        client.resolved.swap(_tmp);
     }
 
     free(uvreq);
@@ -120,25 +120,25 @@ void on_tcp_connect(uv_connect_t *connreq_raw, int status)
         return;
     }
 
-    uv_stream_t *client = connreq->handle;
-    uv_read_start(client, uv_quick_alloc, on_data_read);
+    uv_stream_t *tcphandle = connreq->handle;
+    uv_read_start(tcphandle, uv_quick_alloc, on_data_read);
 
-    const project::prog_t &prog = *get_prog(client->loop);
+    project::client_t &client = *get_active_client(tcphandle->loop);
 
-    switch (initiate_tls_handshake(prog))
+    switch (initiate_tls_handshake(client))
     {
     case project::tls_state_t::WANT_READ: // means OK!
         break;
     case project::tls_state_t::ERROR:
         fprintf(stderr, "error couldn't initiate TLS ClientHello\n");
-        uv_close(reinterpret_cast<uv_handle_t *>(client), on_stream_close);
+        uv_close(reinterpret_cast<uv_handle_t *>(tcphandle), on_stream_close);
         break;
     case project::tls_state_t::NOT_HTTPS:
     {
         std::unique_ptr<uv_buf_t> reqbuf;
-        prepare_reqbuf(prog.hostname.get(), prog.path.get(), reqbuf);
-        if (int retval = uv_quick_write(client, reqbuf.get()); 0 != retval)
-            uv_close(reinterpret_cast<uv_handle_t *>(client), on_stream_close);
+        prepare_reqbuf(client.hostname.get(), client.path.get(), reqbuf);
+        if (int retval = uv_quick_write(tcphandle, reqbuf.get()); 0 != retval)
+            uv_close(reinterpret_cast<uv_handle_t *>(tcphandle), on_stream_close);
         else
             reqbuf.release();
         break;
@@ -171,9 +171,9 @@ void on_writeto(uv_fs_t *fwritereq)
     {
         fprintf(stderr, "error couldn't write to file %d: %s\n", fwritereq->file, uv_err_name(fwritereq->result));
 
-        const project::prog_t &prog = *get_prog(fwritereq->loop);
-        uv_close(reinterpret_cast<uv_handle_t *>(prog.client.get()), on_stream_close);
-        uv_fclose(prog.loop, fwritereq->file);
+        project::client_t &client = *get_active_client(fwritereq->loop);
+        uv_close(reinterpret_cast<uv_handle_t *>(client.tcphandle.get()), on_stream_close);
+        uv_fclose(client.loop, fwritereq->file);
     }
 
     cleanup_fs_write(fwritereq);
