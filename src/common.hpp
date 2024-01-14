@@ -39,9 +39,10 @@ namespace project
     {
         llhttp_t parser;
         llhttp_settings_t settings;
+        std::string partial;
+        std::string status;
         header_t headers;
         pheader_t pheader;
-        std::string partial;
         client_t *client;
     };
 
@@ -91,9 +92,9 @@ namespace project
     std::string prepare_httpreq(const char *hostname, const char *path)
     {
         std::string getreq = TEMPLATE_GET;
-
-        return std::move(getreq.replace(getreq.find("{host}"), 6, hostname)
-                             .replace(getreq.find("{path}"), 6, path));
+        getreq.replace(getreq.find("{host}"), 6, hostname)
+            .replace(getreq.find("{path}"), 6, path);
+        return getreq;
     }
 
     void uv_free(uv_buf_t *uvbuf)

@@ -21,16 +21,29 @@ int on_header_field_or_value(llhttp_t *parser, const char *at, size_t length)
 
 int on_header_field_complete(llhttp_t *parser)
 {
-    project::composite_parser_t *composite = get_composite(parser);
-    auto retval = composite->headers.emplace(project::header_t::value_type(std::move(composite->partial), ""));
-    composite->pheader = retval.first;
+    project::composite_parser_t &composite = *get_composite(parser);
+    auto retval = composite.headers.emplace(project::header_t::value_type(std::move(composite.partial), ""));
+    composite.pheader = retval.first;
     return 0;
 }
 
 int on_header_value_complete(llhttp_t *parser)
 {
-    project::composite_parser_t *composite = get_composite(parser);
-    composite->pheader->second = std::move(composite->partial);
+    project::composite_parser_t &composite = *get_composite(parser);
+    composite.pheader->second.swap(composite.partial);
+    return 0;
+}
+
+int on_http_status(llhttp_t *parser, const char *at, size_t length)
+{
+    get_composite(parser)->partial.append(at, at + length);
+    return 0;
+}
+
+int on_http_status_complete(llhttp_t *parser)
+{
+    project::composite_parser_t &composite = *get_composite(parser);
+    composite.status.swap(composite.partial);
     return 0;
 }
 
@@ -39,6 +52,8 @@ int on_httpresp_body(llhttp_t *, const char *, size_t);
 int init_httpresp_parser_settings(llhttp_settings_t &settings)
 {
     llhttp_settings_init(&settings);
+    settings.on_status = on_http_status;
+    settings.on_status_complete = on_http_status_complete;
     settings.on_header_field = on_header_field_or_value;
     settings.on_header_value = on_header_field_or_value;
     settings.on_header_field_complete = on_header_field_complete;
