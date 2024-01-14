@@ -23,10 +23,7 @@ int prepare_uvbuf(const char *base, size_t len, std::unique_ptr<uv_buf_t> &uvbuf
     return 0;
 }
 
-void on_stream_close(uv_handle_t *handle)
-{
-    free(handle);
-}
+void on_stream_close(uv_handle_t *handle) {}
 
 void on_shutdown(uv_shutdown_t *shutreq, int status)
 {
@@ -93,12 +90,15 @@ void on_fs_open(uv_fs_t *fsreq)
 
 void on_getaddrinfo(uv_getaddrinfo_t *uvreq, int status, struct addrinfo *result)
 {
-    const project::prog_t *prog = get_prog(uvreq->loop);
+    const project::prog_t &prog = *get_prog(uvreq->loop);
 
     if (0 != status)
-        fprintf(stderr, "error couldn't resolve %s with message: %s\n", prog->hostname, uv_err_name(status));
+        fprintf(stderr, "error couldn't resolve %s with message: %s\n", prog.hostname.get(), uv_err_name(status));
     else
-        const_cast<project::prog_t *>(get_prog(uvreq->loop))->resolved = result;
+    {
+        std::unique_ptr<addrinfo> _tmp(result);
+        const_cast<project::prog_t &>(prog).resolved.swap(_tmp);
+    }
 
     free(uvreq);
 }
@@ -123,9 +123,9 @@ void on_tcp_connect(uv_connect_t *connreq_raw, int status)
     uv_stream_t *client = connreq->handle;
     uv_read_start(client, uv_quick_alloc, on_data_read);
 
-    const project::prog_t *prog = get_prog(client->loop);
+    const project::prog_t &prog = *get_prog(client->loop);
 
-    switch (initiate_tls_handshake(const_cast<project::prog_t &>(*prog)))
+    switch (initiate_tls_handshake(prog))
     {
     case project::tls_state_t::WANT_READ: // means OK!
         break;
@@ -136,7 +136,7 @@ void on_tcp_connect(uv_connect_t *connreq_raw, int status)
     case project::tls_state_t::NOT_HTTPS:
     {
         std::unique_ptr<uv_buf_t> reqbuf;
-        prepare_reqbuf(prog->hostname, prog->path, reqbuf);
+        prepare_reqbuf(prog.hostname.get(), prog.path.get(), reqbuf);
         if (int retval = uv_quick_write(client, reqbuf.get()); 0 != retval)
             uv_close(reinterpret_cast<uv_handle_t *>(client), on_stream_close);
         else
@@ -171,9 +171,9 @@ void on_writeto(uv_fs_t *fwritereq)
     {
         fprintf(stderr, "error couldn't write to file %d: %s\n", fwritereq->file, uv_err_name(fwritereq->result));
 
-        const project::prog_t *prog = get_prog(fwritereq->loop);
-        uv_close(reinterpret_cast<uv_handle_t *>(prog->client), on_stream_close);
-        uv_fclose(prog->loop, fwritereq->file);
+        const project::prog_t &prog = *get_prog(fwritereq->loop);
+        uv_close(reinterpret_cast<uv_handle_t *>(prog.client.get()), on_stream_close);
+        uv_fclose(prog.loop, fwritereq->file);
     }
 
     cleanup_fs_write(fwritereq);

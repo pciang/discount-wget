@@ -91,6 +91,7 @@
         "hash_map": "cpp",
         "hash_set": "cpp",
         "regex": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "__functional_03": "cpp"
     }
 }

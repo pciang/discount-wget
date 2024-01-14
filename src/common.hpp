@@ -55,14 +55,14 @@ namespace project
     struct prog_t
     {
         uv_loop_t *loop;
-        uv_tcp_t *client;
-        SSL *tls;
-        CURLU *curlh;
-        char *scheme,
-            *hostname,
-            *port,
-            *path;
-        addrinfo *resolved;
+        std::unique_ptr<uv_tcp_t> client;
+        std::unique_ptr<SSL> tls;
+        std::unique_ptr<CURLU> curlu;
+        std::unique_ptr<char> scheme,
+            hostname,
+            port,
+            path;
+        std::unique_ptr<addrinfo> resolved;
         composite_parser_t composite;
         ssize_t outfiled;
         int64_t outfiled_offset;
@@ -93,6 +93,15 @@ namespace project
     {
         free(uvbuf->base);
         free(uvbuf);
+    }
+
+    CURLUcode curl_url_get(CURLU *handle, CURLUPart what, std::unique_ptr<char> &part, unsigned int flags)
+    {
+        char *part_raw;
+        CURLUcode retval = ::curl_url_get(handle, what, &part_raw, flags);
+        std::unique_ptr<char> _tmp(part_raw);
+        part.swap(_tmp);
+        return retval;
     }
 
     int init_prog(prog_tpp &);
@@ -127,6 +136,18 @@ template <>
 void std::default_delete<uv_connect_t>::operator()(uv_connect_t *connreq) const
 {
     free(connreq);
+}
+
+template <>
+void std::default_delete<CURLU>::operator()(CURLU *curl) const
+{
+    curl_free(curl);
+}
+
+template <>
+void std::default_delete<SSL>::operator()(SSL *ssl) const
+{
+    SSL_free(ssl);
 }
 
 #endif

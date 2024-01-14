@@ -42,41 +42,46 @@ namespace project
         return 0;
     }
 
-    int parse_url(prog_t &prog)
+    int parse_url(prog_t &prog, const std::string &url)
     {
-        prog.curlh = curl_url();
+        std::unique_ptr<CURLU> _tmp(curl_url());
+        prog.curlu.swap(_tmp);
 
-        if (CURLUcode retval = curl_url_set(prog.curlh, CURLUPART_URL, opts.url.c_str(), CURLU_GUESS_SCHEME); CURLUE_OK != retval)
+        if (CURLUcode retval = curl_url_set(prog.curlu.get(), CURLUPART_URL, opts.url.c_str(), CURLU_GUESS_SCHEME); CURLUE_OK != retval)
             return -1;
 
-        curl_url_get(prog.curlh, CURLUPART_SCHEME, &prog.scheme, 0);
-        curl_url_get(prog.curlh, CURLUPART_HOST, &prog.hostname, 0);
-        curl_url_get(prog.curlh, CURLUPART_PORT, &prog.port, CURLU_DEFAULT_PORT);
-        curl_url_get(prog.curlh, CURLUPART_PATH, &prog.path, 0);
+        curl_url_get(prog.curlu.get(), CURLUPART_SCHEME, prog.scheme, 0);
+        curl_url_get(prog.curlu.get(), CURLUPART_HOST, prog.hostname, 0);
+        curl_url_get(prog.curlu.get(), CURLUPART_PORT, prog.port, CURLU_DEFAULT_PORT);
+        curl_url_get(prog.curlu.get(), CURLUPART_PATH, prog.path, 0);
 
         return 0;
     }
 
-    int init_prog(prog_tpp &prog)
+    int init_prog(prog_tpp &pprog)
     {
-        prog_tpp temp(new (reinterpret_cast<prog_t *>(malloc(sizeof(prog_t)))) prog_t);
-        prog.swap(temp);
+        {
+            prog_tpp _tmp(new (reinterpret_cast<prog_t *>(malloc(sizeof(prog_t)))) prog_t);
+            pprog.swap(_tmp);
+        }
 
-        if (int retval = parse_url(*prog); 0 != retval)
+        prog_t &prog = *pprog;
+
+        if (int retval = parse_url(prog, opts.url); 0 != retval)
         {
             fprintf(stderr, "error couldn't parse URL\n");
             return retval;
         }
 
-        prog->usehttps = false;
-        if (int retval = std::string("https").compare(prog->scheme); 0 == retval)
-            prog->usehttps = true;
+        prog.usehttps = false;
+        if (int retval = std::string("https").compare(prog.scheme.get()); 0 == retval)
+            prog.usehttps = true;
 
-        if (int retval = init_httpresp_parser(*prog); 0 != retval)
+        if (int retval = init_httpresp_parser(prog); 0 != retval)
             return retval;
 
-        prog->loop = uv_default_loop();
-        uv_loop_set_data(prog->loop, prog.get());
+        prog.loop = uv_default_loop();
+        uv_loop_set_data(prog.loop, pprog.get());
 
         // init openssl
         SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_client_method());
@@ -86,9 +91,12 @@ namespace project
         SSL *ssl = SSL_new(ssl_ctx);
         SSL_set_connect_state(ssl); // I am a client
         SSL_set_bio(ssl, BIO_new(BIO_s_mem()), BIO_new(BIO_s_mem()));
-        SSL_set1_host(ssl, prog->hostname);
+        SSL_set1_host(ssl, prog.hostname.get());
 
-        prog->tls = ssl;
+        {
+            std::unique_ptr<SSL> _tmp(ssl);
+            prog.tls.swap(_tmp);
+        }
 
         return 0;
     }
@@ -115,9 +123,9 @@ int run_phase_one(project::prog_t &prog)
     hint.ai_protocol = IPPROTO_TCP;
 
     std::unique_ptr<uv_getaddrinfo_t> getaddreq(reinterpret_cast<uv_getaddrinfo_t *>(malloc(sizeof(uv_getaddrinfo_t))));
-    if (int retval = uv_getaddrinfo(prog.loop, getaddreq.get(), on_getaddrinfo, prog.hostname, prog.port, &hint))
+    if (int retval = uv_getaddrinfo(prog.loop, getaddreq.get(), on_getaddrinfo, prog.hostname.get(), prog.port.get(), &hint))
     {
-        fprintf(stderr, "error attempting to resolve %s with message: %s\n", prog.hostname, uv_err_name(retval));
+        fprintf(stderr, "error attempting to resolve %s with message: %s\n", prog.hostname.get(), uv_err_name(retval));
         return retval;
     }
     else
@@ -140,10 +148,10 @@ int run_phase_two(project::prog_t &prog)
         return retval;
     }
     else
-        prog.client = client.release();
+        prog.client.swap(client);
 
     std::unique_ptr<uv_connect_t> connreq(reinterpret_cast<uv_connect_t *>(malloc(sizeof(uv_connect_t))));
-    if (int retval = uv_tcp_connect(connreq.get(), prog.client, prog.resolved->ai_addr, on_tcp_connect); 0 != retval)
+    if (int retval = uv_tcp_connect(connreq.get(), prog.client.get(), prog.resolved->ai_addr, on_tcp_connect); 0 != retval)
     {
         fprintf(stderr, "error couldn't initiate a tcp conn: %s\n", uv_err_name(retval));
         return retval;
@@ -159,19 +167,19 @@ project::tls_state_t initiate_tls_handshake(const project::prog_t &prog)
     if (!prog.usehttps)
         return project::tls_state_t::NOT_HTTPS;
 
-    SSL_connect(prog.tls);
+    SSL_connect(prog.tls.get());
 
     std::unique_ptr<uv_buf_t> uvbuf;
-    if (project::flush_wbio_t retval = flush_wbio(prog.tls, uvbuf); project::flush_wbio_t::OK != retval)
+    if (project::flush_wbio_t retval = flush_wbio(prog.tls.get(), uvbuf); project::flush_wbio_t::OK != retval)
     {
         fprintf(stderr, "error nothing flushable in wbio (shouldn't happen)\n");
         return project::tls_state_t::ERROR;
     }
 
-    if (int retval = uv_quick_write(reinterpret_cast<uv_stream_t *>(prog.client), uvbuf.get()); 0 != retval)
+    if (int retval = uv_quick_write(reinterpret_cast<uv_stream_t *>(prog.client.get()), uvbuf.get()); 0 != retval)
     {
-        fprintf(stderr, "error couldn't initiate write %p: %s\n", reinterpret_cast<void *>(prog.client), uv_err_name(retval));
-        uv_close(reinterpret_cast<uv_handle_t *>(prog.client), on_stream_close);
+        fprintf(stderr, "error couldn't initiate write %p: %s\n", reinterpret_cast<void *>(prog.client.get()), uv_err_name(retval));
+        uv_close(reinterpret_cast<uv_handle_t *>(prog.client.get()), on_stream_close);
         return project::tls_state_t::ERROR;
     }
     else
@@ -182,19 +190,19 @@ project::tls_state_t initiate_tls_handshake(const project::prog_t &prog)
 
 project::tls_state_t handle_tls_handshake(const project::prog_t &prog, const uv_buf_t *readbuf, ssize_t nread, std::unique_ptr<uv_buf_t> &writebuf)
 {
-    if (SSL_is_init_finished(prog.tls))
+    if (SSL_is_init_finished(prog.tls.get()))
         return project::tls_state_t::OK;
 
-    flush_uv_readbuf(prog.tls, readbuf, nread);
-    SSL_do_handshake(prog.tls);
+    flush_uv_readbuf(prog.tls.get(), readbuf, nread);
+    SSL_do_handshake(prog.tls.get());
 
-    if (project::flush_wbio_t retval = flush_wbio(prog.tls, writebuf); project::flush_wbio_t::OK != retval)
+    if (project::flush_wbio_t retval = flush_wbio(prog.tls.get(), writebuf); project::flush_wbio_t::OK != retval)
     {
         fprintf(stderr, "warning nothing in wbio to flush during handshake\n");
         return project::tls_state_t::WANT_READ;
     }
 
-    if (SSL_is_init_finished(prog.tls))
+    if (SSL_is_init_finished(prog.tls.get()))
         return project::tls_state_t::OK_FINISH;
 
     return project::tls_state_t::HAS_PAYLOAD;
@@ -205,9 +213,9 @@ int try_send_httpreq(SSL *tls, uv_stream_t *stream)
     if (!SSL_is_init_finished(tls))
         return -1;
 
-    const project::prog_t *prog = get_prog(stream->loop);
+    const project::prog_t &prog = *get_prog(stream->loop);
 
-    std::string httpreq = project::prepare_httpreq(prog->hostname, prog->path);
+    std::string httpreq = project::prepare_httpreq(prog.hostname.get(), prog.path.get());
     SSL_write(tls, httpreq.c_str(), httpreq.length());
 
     std::unique_ptr<uv_buf_t> writebuf;
@@ -249,12 +257,12 @@ void on_data_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *readbuf)
         return;
     }
 
-    const project::prog_t *prog = get_prog(stream->loop);
-    if (prog->usehttps)
+    const project::prog_t &prog = *get_prog(stream->loop);
+    if (prog.usehttps)
     {
         std::unique_ptr<uv_buf_t> writebuf;
 
-        project::tls_state_t tls_state = handle_tls_handshake(*prog, readbuf, nread, writebuf);
+        project::tls_state_t tls_state = handle_tls_handshake(prog, readbuf, nread, writebuf);
         switch (tls_state)
         {
         case project::tls_state_t::OK: // essentially, TLS handshake is finished
@@ -271,30 +279,30 @@ void on_data_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *readbuf)
                 writebuf.release();
 
             if (project::tls_state_t::OK_FINISH == tls_state)
-                try_send_httpreq(prog->tls, stream);
+                try_send_httpreq(prog.tls.get(), stream);
             return;
         }
         case project::tls_state_t::WANT_READ:
             return;
         }
 
-        flush_uv_readbuf(prog->tls, readbuf, nread);
+        flush_uv_readbuf(prog.tls.get(), readbuf, nread);
 
         std::unique_ptr<uv_buf_t> plainbuf;
-        for (project::flush_wbio_t code = ssl_quick_read(prog->tls, plainbuf); project::flush_wbio_t::OK == code;)
+        for (project::flush_wbio_t code = ssl_quick_read(prog.tls.get(), plainbuf); project::flush_wbio_t::OK == code;)
         {
-            if (llhttp_errno_t retval = llhttp_execute(&const_cast<project::prog_t *>(prog)->composite.parser, plainbuf->base, plainbuf->len); HPE_OK != retval)
+            if (llhttp_errno_t retval = llhttp_execute(&const_cast<project::prog_t &>(prog).composite.parser, plainbuf->base, plainbuf->len); HPE_OK != retval)
             {
                 fprintf(stderr, "error parsing HTTP response: %s\n", llhttp_errno_name(retval));
                 uv_close(reinterpret_cast<uv_handle_t *>(stream), on_stream_close);
                 break;
             }
-            code = ssl_quick_read(prog->tls, plainbuf);
+            code = ssl_quick_read(prog.tls.get(), plainbuf);
         }
     }
     else
     {
-        if (llhttp_errno_t retval = llhttp_execute(&const_cast<project::prog_t *>(prog)->composite.parser, readbuf->base, nread); HPE_OK != retval)
+        if (llhttp_errno_t retval = llhttp_execute(&const_cast<project::prog_t &>(prog).composite.parser, readbuf->base, nread); HPE_OK != retval)
         {
             fprintf(stderr, "error parsing HTTP response: %s\n", llhttp_errno_name(retval));
             uv_close(reinterpret_cast<uv_handle_t *>(stream), on_stream_close);
