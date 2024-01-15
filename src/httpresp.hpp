@@ -8,9 +8,9 @@ project::composite_parser_t *get_composite(llhttp_t *parser)
     return reinterpret_cast<project::composite_parser_t *>(parser);
 }
 
-project::client_t *get_active_client(llhttp_t *parser)
+project::prog_t *get_prog(llhttp_t *parser)
 {
-    return get_composite(parser)->client;
+    return reinterpret_cast<project::prog_t *>(uv_loop_get_data(get_composite(parser)->client->tcphandle->loop));
 }
 
 int on_header_field_or_value(llhttp_t *parser, const char *at, size_t length)
@@ -43,7 +43,7 @@ int on_http_status(llhttp_t *parser, const char *at, size_t length)
 int on_http_status_complete(llhttp_t *parser)
 {
     project::composite_parser_t &composite = *get_composite(parser);
-    composite.status.swap(composite.partial);
+    composite.status = std::stoi(std::move(composite.partial));
     return 0;
 }
 

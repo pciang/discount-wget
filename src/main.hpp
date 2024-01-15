@@ -58,14 +58,8 @@ namespace project
         return 0;
     }
 
-    int init_client(client_tpp &p_client, llhttp_settings_t &settings)
+    int init_client(uv_loop_t *uvloop, client_t &client, llhttp_settings_t &settings)
     {
-        {
-            client_tpp _tmp(new (reinterpret_cast<client_t *>(malloc(sizeof(client_t)))) client_t);
-            p_client.swap(_tmp);
-        }
-
-        client_t &client = *p_client;
         if (int retval = parse_url(client, opts.url); 0 != retval)
         {
             fprintf(stderr, "error couldn't parse URL\n");
@@ -79,8 +73,14 @@ namespace project
         if (int retval = init_httpresp_parser(client, settings); 0 != retval)
             return retval;
 
-        client.loop = uv_default_loop();
-        uv_loop_set_data(client.loop, p_client.get());
+        std::unique_ptr<uv_tcp_t> _tmp_tcphandle(reinterpret_cast<uv_tcp_t *>(malloc(sizeof(uv_tcp_t))));
+        client.tcphandle.swap(_tmp_tcphandle);
+        if (int retval = uv_tcp_init(uvloop, client.tcphandle.get()); 0 != retval)
+        {
+            fprintf(stderr, "error couldn't init tcp: %s\n", uv_err_name(retval));
+            return retval;
+        }
+        uv_handle_set_data(reinterpret_cast<uv_handle_t *>(client.tcphandle.get()), &client);
 
         // init openssl
         SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_client_method());
@@ -103,18 +103,18 @@ namespace project
     int init_prog(project::prog_t &prog)
     {
         prog.loop = uv_default_loop();
+        prog.outfiled = 0;
+        prog.outfiled_offset = 0;
+        uv_loop_set_data(prog.loop, &prog);
         init_httpresp_parser_settings(prog.settings);
         return 0;
     }
 };
 
-int run_phase_one(project::client_t &client)
+int run_phase_one(uv_loop_t *uvloop, project::client_t &client)
 {
-    client.outfiled = 0;
-    client.resolved = NULL;
-
     std::unique_ptr<uv_fs_t> fsreq(reinterpret_cast<uv_fs_t *>(malloc(sizeof(uv_fs_t))));
-    if (int retval = uv_fs_open(client.loop, fsreq.get(), project::opts.outfilename.c_str(), UV_FS_O_CREAT | UV_FS_O_RDWR, S_IRWXU | S_IRGRP | S_IROTH, on_fs_open))
+    if (int retval = uv_fs_open(uvloop, fsreq.get(), project::opts.outfilename.c_str(), UV_FS_O_CREAT | UV_FS_O_RDWR, S_IRWXU | S_IRGRP | S_IROTH, on_fs_open))
     {
         fprintf(stderr, "error attempting to write into the file %s with message: %s\n", project::opts.outfilename.c_str(), uv_err_name(retval));
         return retval;
@@ -129,7 +129,7 @@ int run_phase_one(project::client_t &client)
     hint.ai_protocol = IPPROTO_TCP;
 
     std::unique_ptr<uv_getaddrinfo_t> getaddreq(reinterpret_cast<uv_getaddrinfo_t *>(malloc(sizeof(uv_getaddrinfo_t))));
-    if (int retval = uv_getaddrinfo(client.loop, getaddreq.get(), on_getaddrinfo, client.hostname.get(), client.port.get(), &hint))
+    if (int retval = uv_getaddrinfo(uvloop, getaddreq.get(), on_getaddrinfo, client.hostname.get(), client.port.get(), &hint))
     {
         fprintf(stderr, "error attempting to resolve %s with message: %s\n", client.hostname.get(), uv_err_name(retval));
         return retval;
@@ -137,25 +137,16 @@ int run_phase_one(project::client_t &client)
     else
         getaddreq.release();
 
-    return uv_run(client.loop, UV_RUN_DEFAULT);
+    return uv_run(uvloop, UV_RUN_DEFAULT);
 }
 
-bool check_phase_one(project::client_t &client)
+bool check_phase_one(project::prog_t &prog, project::client_t &client)
 {
-    return 0 < client.outfiled && NULL != client.resolved;
+    return 0 != prog.outfiled && NULL != client.resolved.get();
 }
 
-int run_phase_two(project::client_t &client)
+int run_phase_two(uv_loop_t *uvloop, project::client_t &client)
 {
-    std::unique_ptr<uv_tcp_t> tcphandle(reinterpret_cast<uv_tcp_t *>(malloc(sizeof(uv_tcp_t))));
-    if (int retval = uv_tcp_init(client.loop, tcphandle.get()); 0 != retval)
-    {
-        fprintf(stderr, "error couldn't init tcp: %s\n", uv_err_name(retval));
-        return retval;
-    }
-    else
-        client.tcphandle.swap(tcphandle);
-
     std::unique_ptr<uv_connect_t> connreq(reinterpret_cast<uv_connect_t *>(malloc(sizeof(uv_connect_t))));
     if (int retval = uv_tcp_connect(connreq.get(), client.tcphandle.get(), client.resolved->ai_addr, on_tcp_connect); 0 != retval)
     {
@@ -165,7 +156,7 @@ int run_phase_two(project::client_t &client)
     else
         connreq.release();
 
-    return uv_run(client.loop, UV_RUN_DEFAULT);
+    return uv_run(uvloop, UV_RUN_DEFAULT);
 }
 
 project::tls_state_t initiate_tls_handshake(const project::client_t &client)
@@ -219,7 +210,7 @@ int try_send_httpreq(SSL *tls, uv_stream_t *tcphandle)
     if (!SSL_is_init_finished(tls))
         return -1;
 
-    project::client_t &client = *get_active_client(tcphandle->loop);
+    project::client_t &client = *get_client(tcphandle);
 
     std::string httpreq = project::prepare_httpreq(client.hostname.get(), client.path.get());
     SSL_write(tls, httpreq.c_str(), httpreq.length());
@@ -263,7 +254,7 @@ void on_data_read(uv_stream_t *tcphandle, ssize_t nread, const uv_buf_t *readbuf
         return;
     }
 
-    project::client_t &client = *get_active_client(tcphandle->loop);
+    project::client_t &client = *get_client(tcphandle);
     if (client.usehttps)
     {
         std::unique_ptr<uv_buf_t> writebuf;
@@ -318,11 +309,12 @@ void on_data_read(uv_stream_t *tcphandle, ssize_t nread, const uv_buf_t *readbuf
 
 int on_httpresp_body(llhttp_t *parser, const char *at, size_t length)
 {
-    project::client_t &client = *get_active_client(parser);
+    project::prog_t &prog = *get_prog(parser);
+    uv_loop_t *uvloop = prog.loop;
 
     std::unique_ptr<uv_buf_t> fwritebuf;
     prepare_uvbuf(at, length, fwritebuf);
-    if (int retval = uv_writeto(client.loop, client.outfiled, client.outfiled_offset, fwritebuf.get()); 0 != retval)
+    if (int retval = uv_writeto(uvloop, prog.outfiled, prog.outfiled_offset, fwritebuf.get()); 0 != retval)
     {
         fprintf(stderr, "error writing into output file: %s\n", uv_err_name(retval));
         return -1;
@@ -330,7 +322,7 @@ int on_httpresp_body(llhttp_t *parser, const char *at, size_t length)
     else
         fwritebuf.release();
 
-    client.outfiled_offset += length;
+    prog.outfiled_offset += length;
     return 0;
 }
 

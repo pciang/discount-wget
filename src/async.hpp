@@ -8,9 +8,19 @@
 
 project::tls_state_t initiate_tls_handshake(const project::client_t &);
 
-project::client_t *get_active_client(uv_loop_t *loop)
+project::client_t *get_client(uv_stream_t *stream)
 {
-    return reinterpret_cast<project::client_t *>(loop->data);
+    return reinterpret_cast<project::client_t *>(stream->data);
+}
+
+project::prog_t *get_prog(uv_stream_t *stream)
+{
+    return reinterpret_cast<project::prog_t *>(uv_loop_get_data(stream->loop));
+}
+
+project::prog_t *get_prog(uv_loop_t *uvloop)
+{
+    return reinterpret_cast<project::prog_t *>(uv_loop_get_data(uvloop));
 }
 
 int prepare_uvbuf(const char *base, size_t len, std::unique_ptr<uv_buf_t> &uvbuf)
@@ -79,10 +89,10 @@ void on_fs_open(uv_fs_t *fsreq)
     }
     else
     {
-        project::client_t &client = *get_active_client(fsreq->loop);
+        project::prog_t &prog = *get_prog(fsreq->loop);
 
-        client.outfiled = fsreq->result;
-        client.outfiled_offset = 0;
+        prog.outfiled = fsreq->result;
+        prog.outfiled_offset = 0;
     }
 
     free(fsreq);
@@ -90,7 +100,8 @@ void on_fs_open(uv_fs_t *fsreq)
 
 void on_getaddrinfo(uv_getaddrinfo_t *uvreq, int status, struct addrinfo *result)
 {
-    project::client_t &client = *get_active_client(uvreq->loop);
+    project::prog_t &prog = *get_prog(uvreq->loop);
+    project::client_t &client = *prog.active;
 
     if (0 != status)
         fprintf(stderr, "error couldn't resolve %s with message: %s\n", client.hostname.get(), uv_err_name(status));
@@ -123,7 +134,7 @@ void on_tcp_connect(uv_connect_t *connreq_raw, int status)
     uv_stream_t *tcphandle = connreq->handle;
     uv_read_start(tcphandle, uv_quick_alloc, on_data_read);
 
-    project::client_t &client = *get_active_client(tcphandle->loop);
+    project::client_t &client = *get_client(tcphandle);
 
     switch (initiate_tls_handshake(client))
     {
@@ -171,9 +182,10 @@ void on_writeto(uv_fs_t *fwritereq)
     {
         fprintf(stderr, "error couldn't write to file %d: %s\n", fwritereq->file, uv_err_name(fwritereq->result));
 
-        project::client_t &client = *get_active_client(fwritereq->loop);
+        project::prog_t &prog = *get_prog(fwritereq->loop);
+        project::client_t &client = *prog.active;
         uv_close(reinterpret_cast<uv_handle_t *>(client.tcphandle.get()), on_stream_close);
-        uv_fclose(client.loop, fwritereq->file);
+        uv_fclose(fwritereq->loop, fwritereq->file);
     }
 
     cleanup_fs_write(fwritereq);

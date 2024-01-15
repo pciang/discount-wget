@@ -40,7 +40,7 @@ namespace project
         llhttp_t parser;
         llhttp_settings_t settings;
         std::string partial;
-        std::string status;
+        int status;
         header_t headers;
         pheader_t pheader;
         client_t *client;
@@ -55,7 +55,6 @@ namespace project
 
     struct client_t
     {
-        uv_loop_t *loop;
         std::unique_ptr<uv_tcp_t> tcphandle;
         std::unique_ptr<SSL> tls;
         std::unique_ptr<CURLU> curlu;
@@ -65,17 +64,15 @@ namespace project
             path;
         std::unique_ptr<addrinfo> resolved;
         composite_parser_t composite;
-        ssize_t outfiled;
-        int64_t outfiled_offset;
         bool usehttps;
     };
-
-    typedef std::unique_ptr<client_t> client_tpp;
 
     struct prog_t
     {
         uv_loop_t *loop;
-        client_tpp active;
+        client_t *active;
+        ssize_t outfiled;
+        int64_t outfiled_offset;
         llhttp_settings_t settings;
     };
 
@@ -113,8 +110,6 @@ namespace project
     }
 
     int init_prog(project::prog_t &);
-
-    int init_client(client_tpp &, llhttp_settings_t &);
 };
 
 template <>
