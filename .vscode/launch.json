@@ -8,7 +8,7 @@
             "args": [
                 "-o",
                 "./libuv-test.zip",
-                "https://codeload.github.com/libuv/libuv/zip/refs/tags/v1.47.0"
+                "https://github.com/libuv/libuv/archive/refs/tags/v1.47.0.zip"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

@@ -2,7 +2,7 @@
 
 What's more fun than rewriting an already existing program? The learning process, of course.
 
-This silly `discount-wget` downloads a file from the internet through HTTP or HTTPS, just like `wget` but with less features (Before writing this readme, I didn't know that `wget` could download a file over FTP or download an entire website). At the moment, `discount-wget` doesn't follow redirects. This repository is only meant for learning.
+This silly `discount-wget` downloads a file from the internet through HTTP or HTTPS, just like `wget` but with less features (Before writing this readme, I didn't know that `wget` could download a file over FTP or download an entire website). ~~At the moment, `discount-wget` doesn't follow redirects.~~ `discount-wget` now follows redirect once. This repository is only meant for learning.
 
 ### Dependencies
 
