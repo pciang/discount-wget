@@ -4,6 +4,8 @@
 #include <map>
 #include <string>
 #include <memory>
+#include <algorithm>
+#include <iostream>
 
 #include "uv.h"
 #include "llhttp.h"
@@ -39,7 +41,7 @@ namespace project
     {
         llhttp_t parser;
         llhttp_settings_t settings;
-        std::string status;
+        llhttp_status_t status;
         header_t headers;
         pheader_t pheader;
         std::string partial;
@@ -63,6 +65,7 @@ namespace project
             port,
             path;
         std::unique_ptr<addrinfo> resolved;
+        std::string redirect_url;
         composite_parser_t composite;
         bool usehttps;
     };

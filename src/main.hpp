@@ -107,21 +107,22 @@ namespace project
         prog.outfiled_offset = 0;
         uv_loop_set_data(prog.loop, &prog);
         init_httpresp_parser_settings(prog.settings);
+
+        std::unique_ptr<uv_fs_t> fsreq(reinterpret_cast<uv_fs_t *>(malloc(sizeof(uv_fs_t))));
+        if (int retval = uv_fs_open(prog.loop, fsreq.get(), project::opts.outfilename.c_str(), UV_FS_O_CREAT | UV_FS_O_RDWR, S_IRWXU | S_IRGRP | S_IROTH, on_fs_open))
+        {
+            fprintf(stderr, "error attempting to write into the file %s with message: %s\n", project::opts.outfilename.c_str(), uv_err_name(retval));
+            return retval;
+        }
+        else
+            fsreq.release();
+
         return 0;
     }
 };
 
 int run_phase_one(uv_loop_t *uvloop, project::client_t &client)
 {
-    std::unique_ptr<uv_fs_t> fsreq(reinterpret_cast<uv_fs_t *>(malloc(sizeof(uv_fs_t))));
-    if (int retval = uv_fs_open(uvloop, fsreq.get(), project::opts.outfilename.c_str(), UV_FS_O_CREAT | UV_FS_O_RDWR, S_IRWXU | S_IRGRP | S_IROTH, on_fs_open))
-    {
-        fprintf(stderr, "error attempting to write into the file %s with message: %s\n", project::opts.outfilename.c_str(), uv_err_name(retval));
-        return retval;
-    }
-    else
-        fsreq.release();
-
     addrinfo hint;
     memset(&hint, 0, sizeof(addrinfo));
     hint.ai_family = AF_INET;

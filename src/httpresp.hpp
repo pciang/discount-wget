@@ -22,6 +22,7 @@ int on_header_field_or_value(llhttp_t *parser, const char *at, size_t length)
 int on_header_field_complete(llhttp_t *parser)
 {
     project::composite_parser_t &composite = *get_composite(parser);
+    std::transform(composite.partial.begin(), composite.partial.end(), composite.partial.begin(), tolower);
     auto retval = composite.headers.emplace(project::header_t::value_type(std::move(composite.partial), ""));
     composite.pheader = retval.first;
     return 0;
@@ -43,7 +44,15 @@ int on_http_status(llhttp_t *parser, const char *at, size_t length)
 int on_http_status_complete(llhttp_t *parser)
 {
     project::composite_parser_t &composite = *get_composite(parser);
-    composite.status.swap(composite.partial);
+    if (0 == composite.partial.compare("Ok"))
+        composite.status = HTTP_STATUS_OK;
+    else if (0 == composite.partial.compare("Found"))
+        composite.status = HTTP_STATUS_FOUND;
+    else if (0 == composite.partial.compare("Moved Permanently"))
+        composite.status = HTTP_STATUS_MOVED_PERMANENTLY;
+    else
+        composite.status = HTTP_STATUS_CLIENT_CLOSED_REQUEST;
+    composite.partial.clear();
     return 0;
 }
 
