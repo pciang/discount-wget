@@ -39,10 +39,10 @@ namespace project
     {
         llhttp_t parser;
         llhttp_settings_t settings;
-        std::string partial;
-        int status;
+        std::string status;
         header_t headers;
         pheader_t pheader;
+        std::string partial;
         client_t *client;
     };
 

@@ -43,7 +43,7 @@ int on_http_status(llhttp_t *parser, const char *at, size_t length)
 int on_http_status_complete(llhttp_t *parser)
 {
     project::composite_parser_t &composite = *get_composite(parser);
-    composite.status = std::stoi(std::move(composite.partial));
+    composite.status.swap(composite.partial);
     return 0;
 }
 
