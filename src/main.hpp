@@ -91,6 +91,7 @@ namespace project
         SSL_set_connect_state(ssl); // I am a client
         SSL_set_bio(ssl, BIO_new(BIO_s_mem()), BIO_new(BIO_s_mem()));
         SSL_set1_host(ssl, client.hostname.get());
+        SSL_set_tlsext_host_name(ssl, client.hostname.get());
 
         {
             std::unique_ptr<SSL> _tmp(ssl);
